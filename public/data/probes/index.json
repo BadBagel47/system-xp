@@ -1,0 +1,82 @@
+{
+  "probes": {
+    "voyager-1": {
+      "file": "voyager-1.json",
+      "generated": "2026-11-22",
+      "start": -8152.91597,
+      "end": 18627.49931,
+      "points": 406
+    },
+    "voyager-2": {
+      "file": "voyager-2.json",
+      "generated": "2026-11-22",
+      "start": -8168.85139,
+      "end": 18627.49931,
+      "points": 464
+    },
+    "pioneer-10": {
+      "file": "pioneer-10.json",
+      "generated": "2026-11-22",
+      "start": -10165.4125,
+      "end": 18262.50625,
+      "points": 448
+    },
+    "pioneer-11": {
+      "file": "pioneer-11.json",
+      "generated": "2026-11-22",
+      "start": -9766.39792,
+      "end": 18262.50625,
+      "points": 559
+    },
+    "new-horizons": {
+      "file": "new-horizons.json",
+      "generated": "2026-11-22",
+      "start": 2210.32847,
+      "end": 18262.49931,
+      "points": 278
+    },
+    "cassini": {
+      "file": "cassini.json",
+      "generated": "2026-11-22",
+      "start": -808.10486,
+      "end": 6466.9375,
+      "points": 4669
+    },
+    "galileo": {
+      "file": "galileo.json",
+      "generated": "2026-11-22",
+      "start": -3726.43681,
+      "end": 1359.28889,
+      "points": 1671
+    },
+    "juno": {
+      "file": "juno.json",
+      "generated": "2026-11-22",
+      "start": 4234.22292,
+      "end": 10471.56806,
+      "points": 3240
+    },
+    "parker-solar-probe": {
+      "file": "parker-solar-probe.json",
+      "generated": "2026-11-22",
+      "start": 6797.84583,
+      "end": 10957.5,
+      "points": 5171
+    },
+    "juice": {
+      "file": "juice.json",
+      "generated": "2026-11-22",
+      "start": 8504.03125,
+      "end": 11523.76875,
+      "points": 1042
+    },
+    "europa-clipper": {
+      "file": "europa-clipper.json",
+      "generated": "2026-11-22",
+      "start": 9053.17847,
+      "end": 12663.69792,
+      "points": 1987
+    }
+  },
+  "source": "NASA/JPL Horizons"
+}
