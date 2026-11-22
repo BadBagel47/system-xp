@@ -26,6 +26,8 @@ Note for F-003: commits pushed by a workflow with `GITHUB_TOKEN` do not trigger 
 - 2026-11-22: No cookie banner, no tracking services (user). Consequence: no cookies/localStorage for tracking, no analytics, no external fonts/CDNs.
 - 2026-11-22: Product text and README in English (user).
 - 2026-11-22: Publishing via GitHub Pages (user); method GitHub Actions (agent, technical choice).
+- 2026-11-22: Time range 1970–2050; time can also play backwards (user approved recommendations, F-002).
+- 2026-11-22: Planned (future) probe paths are shown dashed; probe data is topped up automatically once a month plus a manual run button (user approved recommendations, F-003).
 
 ## One-time actions
 - Pending (2026-11-22): enable GitHub Pages with source "GitHub Actions" (Settings → Pages). The agent cannot change repo settings. Until done, the deploy job fails.

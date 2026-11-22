@@ -8,13 +8,13 @@ The user's original feature list (1–6) is noted in brackets.
 | ID | Priority | Status | Title |
 |----|----------|--------|-------|
 | F-010 | High | Waiting for user (one-time Pages setting) | Publishing via GitHub Pages after every push to main |
-| F-002 | High | Open | Time controls [2] |
-| F-003 | High | Open | Probe data from NASA/JPL Horizons via GitHub Action [3] |
-| F-004 | High | Open | Probes in 3D with trails up to the chosen date [3] |
-| F-005 | Medium | Open | Real vs. compressed scale [4] |
-| F-006 | Medium | Open | Timeline events you can jump to [5] |
-| F-007 | Medium | Open | Info panel when tapping a planet or probe [6] |
-| F-008 | Medium | Open | Camera mode that follows a probe [6] |
+| F-002 | High | Pågår 2026-11-22 (session_019KYzr9B6MQwkqTnCDiKoiM) | Time controls [2] |
+| F-003 | High | Pågår 2026-11-22 (session_019KYzr9B6MQwkqTnCDiKoiM) | Probe data from NASA/JPL Horizons via GitHub Action [3] |
+| F-004 | High | Pågår 2026-11-22 (session_019KYzr9B6MQwkqTnCDiKoiM) | Probes in 3D with trails up to the chosen date [3] |
+| F-005 | Medium | Pågår 2026-11-22 (session_019KYzr9B6MQwkqTnCDiKoiM) | Real vs. compressed scale [4] |
+| F-006 | Medium | Pågår 2026-11-22 (session_019KYzr9B6MQwkqTnCDiKoiM) | Timeline events you can jump to [5] |
+| F-007 | Medium | Pågår 2026-11-22 (session_019KYzr9B6MQwkqTnCDiKoiM) | Info panel when tapping a planet or probe [6] |
+| F-008 | Medium | Pågår 2026-11-22 (session_019KYzr9B6MQwkqTnCDiKoiM) | Camera mode that follows a probe [6] |
 | D-011 | Low | Open | Choose a licence for the code |
 
 ### F-010 – GitHub Pages publishing
