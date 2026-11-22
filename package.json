@@ -1,0 +1,21 @@
+{
+  "name": "system-xp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "System Xp – a 3D simulator of the solar system and famous space probes.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "astronomy-engine": "2.1.19",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  }
+}

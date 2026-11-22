@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#02030a" />
+    <meta name="description" content="System Xp – explore the solar system and the journeys of famous space probes in 3D." />
+    <title>System Xp – Solar System Explorer</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%23ffd27a'/%3E%3Cellipse cx='16' cy='16' rx='14' ry='5' fill='none' stroke='%239fb7ff' stroke-width='1.5'/%3E%3C/svg%3E" />
+    <script>
+      // Show the error box if something breaks before the 3D view has started.
+      window.addEventListener('error', function (e) {
+        if (document.documentElement.dataset.started) return;
+        var box = document.getElementById('fatal');
+        if (!box) return;
+        var d = box.querySelector('[data-detail]');
+        if (d) d.textContent = (e && e.message) || 'A script failed to load.';
+        box.hidden = false;
+        var l = document.getElementById('loading');
+        if (l) l.hidden = true;
+      });
+    </script>
+  </head>
+  <body>
+    <main id="app" aria-label="3D view of the solar system"></main>
+
+    <header class="topbar">
+      <h1 class="brand">System <span>Xp</span></h1>
+      <time id="date" class="date"></time>
+    </header>
+
+    <div class="controls">
+      <button id="overview" type="button" class="btn" hidden>Overview</button>
+    </div>
+
+    <p id="hint" class="hint"></p>
+
+    <div id="loading" class="loading" role="status">Loading the solar system…</div>
+
+    <div id="paused" class="paused" role="status" hidden>3D paused – trying to restore…</div>
+
+    <section id="fatal" class="fatal" role="alert" hidden>
+      <div class="fatal-card">
+        <h2>The 3D view couldn't start</h2>
+        <p>System Xp needs WebGL 2 to draw the solar system, and this browser didn't allow it or stopped it.</p>
+        <p><strong>Things to try:</strong></p>
+        <ul>
+          <li><strong>Brave:</strong> tap the lion icon in the address bar, turn <em>Shields</em> off for this site and reload. Brave's fingerprinting protection can block 3D graphics.</li>
+          <li>Check that <em>hardware acceleration</em> is turned on in the browser settings.</li>
+          <li>Open the page in another browser, such as Chrome or Firefox.</li>
+        </ul>
+        <button type="button" class="btn" onclick="location.reload()">Try again</button>
+        <p class="fatal-detail">Details: <span data-detail></span></p>
+      </div>
+    </section>
+
+    <noscript>
+      <div class="fatal"><div class="fatal-card"><h2>JavaScript is turned off</h2><p>System Xp needs JavaScript and WebGL 2 to show the solar system in 3D.</p></div></div>
+    </noscript>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
