@@ -10,14 +10,16 @@
 System Xp (experience + exploration) is a 3D simulator of the solar system and the most famous space probes. Starts on today's date, time can be scrolled forwards and backwards, probe journeys are shown from launch to today with a trail up to the chosen date. Must work equally well on phone and desktop. Agents push directly to `main`; the site goes live after every run.
 
 ## Current state
-- F-001 (foundation) done: Sun, planets and Pluto at real positions for today, orbits, Saturn's rings, stars, labels, tap/click to centre a planet, "Overview" button, camera controls for touch and mouse.
-- F-009 (clear message when 3D can't start) done: WebGL 2 check before start, message with tips (Brave Shields, hardware acceleration, other browser), handling of lost graphics context and render errors. Not tried in Brave on the user's Pixel 10 Pro.
-- Tech: Vite + three.js + astronomy-engine, all bundled (no CDN). Unit tests with Vitest (`npm test`). Scene units: 1 = 1 AU, +Y = ecliptic north (J2000 ecliptic).
-- Planets are drawn with a minimum on-screen size (`minPx` in `src/bodies.js`) and grow to true size when close.
+- All six original features are built (F-001–F-008) plus F-009 (3D start-up message). See the backlog for details.
+- Tech: Vite + three.js + astronomy-engine, all bundled (no CDN). Unit tests with Vitest (`npm test`). Scene units: 1 = 1 AU in real scale, +Y = ecliptic north (J2000 ecliptic).
+- Code map: `src/app.js` (3D scene, camera, probes, trails), `src/ui.js` (dock, lists, info panel), `src/clock.js` (time), `src/scale.js` (real/compressed), `src/events.js` (timeline events), `src/probe-catalog.js` (probe list, shared with the data script), `src/trajectory.js` (decimation/interpolation), `scripts/fetch-probes.mjs` (Horizons download).
+- Probe data: `public/data/probes/*.json`, written by the GitHub Action "Update probe data" (monthly + manual). Each file has `generatedAt`; positions after that are drawn dashed as predictions.
+- Publishing waits for the one-time Pages setting (F-010).
+- Verified in headless Chromium (software WebGL) at desktop and phone size. Not tried on a real phone or in Brave.
 
 ## Next steps
-See "Proposed runs" in the backlog. Next: F-002 (time controls), then F-003/F-004 (probes).
-Note for F-003: commits pushed by a workflow with `GITHUB_TOKEN` do not trigger other workflows, so the data workflow must call `deploy.yml` itself (it supports `workflow_call`).
+1. User enables Pages (see One-time actions); then re-run the deploy workflow and check the live site.
+2. See "Proposed runs" in the backlog (F-012, F-013, D-014, D-011).
 
 ## Decisions
 - 2026-11-22: Push directly to `main`; the site must go live after every run (user).
@@ -28,6 +30,7 @@ Note for F-003: commits pushed by a workflow with `GITHUB_TOKEN` do not trigger 
 - 2026-11-22: Publishing via GitHub Pages (user); method GitHub Actions (agent, technical choice).
 - 2026-11-22: Time range 1970–2050; time can also play backwards (user approved recommendations, F-002).
 - 2026-11-22: Planned (future) probe paths are shown dashed; probe data is topped up automatically once a month plus a manual run button (user approved recommendations, F-003).
+- 2026-11-22: Compressed scale = square root of the distance from the Sun, with even scaling around planets (agent, technical choice within F-005). Default scale is still open (D-014).
 
 ## One-time actions
 - Pending (2026-11-22): enable GitHub Pages with source "GitHub Actions" (Settings → Pages). The agent cannot change repo settings. Until done, the deploy job fails.
@@ -45,3 +48,4 @@ Note for F-003: commits pushed by a workflow with `GITHUB_TOKEN` do not trigger 
 
 ## Latest entries
 - 2026-11-22: Repo set up according to agent rules v1.14; F-001 and F-009 built and pushed. First deploy run: tests + build OK, publishing blocked until Pages is enabled (F-010).
+- 2026-11-22: "Kör alla rek": F-002–F-008 built (time, probes, scale, events, info, follow). Probe data committed by the Update probe data Action.

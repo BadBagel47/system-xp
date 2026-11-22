@@ -34,20 +34,25 @@ export function orbitalPeriodDays(bodyId) {
 }
 
 /**
- * Points along one full orbit, centred on `date`, in scene coordinates.
- * Returns a flat Float32Array [x0, y0, z0, x1, ...].
+ * Points along one full orbit, centred on `date`, as heliocentric ecliptic
+ * positions in AU: an array of [x, y, z].
  */
-export function orbitPoints(bodyId, date, segments = 360) {
+export function orbitEcliptic(bodyId, date, segments = 360) {
   const period = orbitalPeriodDays(bodyId);
   const start = date.getTime() - (period / 2) * 86400000;
-  const out = new Float32Array(segments * 3);
+  const out = [];
   for (let i = 0; i < segments; i++) {
-    const t = new Date(start + (i / segments) * period * 86400000);
-    const p = scenePosition(bodyId, t);
-    out[i * 3] = p[0];
-    out[i * 3 + 1] = p[1];
-    out[i * 3 + 2] = p[2];
+    const e = helioEcliptic(bodyId, new Date(start + (i / segments) * period * 86400000));
+    out.push([e.x, e.y, e.z]);
   }
+  return out;
+}
+
+/** Same as orbitEcliptic but in scene coordinates, flat: [x0, y0, z0, x1, ...]. */
+export function orbitPoints(bodyId, date, segments = 360) {
+  const pts = orbitEcliptic(bodyId, date, segments);
+  const out = new Float32Array(segments * 3);
+  pts.forEach((p, i) => out.set(eclipticToScene({ x: p[0], y: p[1], z: p[2] }), i * 3));
   return out;
 }
 

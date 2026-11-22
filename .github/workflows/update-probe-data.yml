@@ -1,0 +1,74 @@
+name: Update probe data
+
+# Downloads probe trajectories from NASA/JPL Horizons into public/data/probes/,
+# commits them to main and republishes the site. The web page itself never calls Horizons.
+on:
+  workflow_dispatch:
+    inputs:
+      all:
+        description: 'Fetch every probe (not only the active ones)'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '23 4 2 * *' # 04:23 UTC on the 2nd of every month
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: probe-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    outputs:
+      fetch: ${{ steps.fetch.outcome }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Fetch trajectories from Horizons
+        id: fetch
+        continue-on-error: true
+        run: node scripts/fetch-probes.mjs ${{ inputs.all && '--all' || '' }}
+      - name: Check the data
+        run: npm test
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/probes
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git commit -m "F-003: Update probe data from NASA/JPL Horizons"
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep 5
+          done
+          exit 1
+
+  # Pushes made with GITHUB_TOKEN don't start other workflows, so publish from here.
+  deploy:
+    needs: update
+    uses: ./.github/workflows/deploy.yml
+
+  report:
+    needs: [update, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if some probes could not be fetched
+        if: needs.update.outputs.fetch != 'success'
+        run: |
+          echo "::error::Fetching from Horizons failed for one or more probes. See the 'Fetch trajectories' step."
+          exit 1

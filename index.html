@@ -26,14 +26,68 @@
 
     <header class="topbar">
       <h1 class="brand">System <span>Xp</span></h1>
-      <time id="date" class="date"></time>
+      <label class="date-field">
+        <span class="sr-only">Date</span>
+        <input id="date" type="date" min="1970-01-01" max="2050-12-31" required />
+      </label>
     </header>
 
-    <div class="controls">
+    <div class="top-actions">
       <button id="overview" type="button" class="btn" hidden>Overview</button>
     </div>
 
-    <p id="hint" class="hint"></p>
+    <div id="banner" class="banner" role="status" hidden></div>
+
+    <aside id="info" class="card info" aria-live="polite" hidden>
+      <button type="button" class="icon-btn close" data-close="info" aria-label="Close">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+      </button>
+      <div id="info-body"></div>
+    </aside>
+
+    <section id="sheet" class="card sheet" aria-labelledby="sheet-title" hidden>
+      <header class="sheet-head">
+        <h2 id="sheet-title"></h2>
+        <button type="button" class="icon-btn" data-close="sheet" aria-label="Close">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+        </button>
+      </header>
+      <div id="sheet-body" class="sheet-body"></div>
+    </section>
+
+    <footer class="dock">
+      <p id="hint" class="hint"></p>
+      <div class="timeline">
+        <div id="ticks" class="ticks" aria-hidden="true"></div>
+        <input id="timeline" type="range" min="0" max="1" step="1" aria-label="Time between 1970 and 2050" />
+        <div class="timeline-ends" aria-hidden="true"><span>1970</span><span>2050</span></div>
+      </div>
+      <div class="dock-row">
+        <div class="group">
+          <button id="reverse" type="button" class="icon-btn" aria-pressed="false" aria-label="Play backwards" title="Play backwards">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M8 3.5v9L1.5 8zM14.5 3.5v9L8 8z" /></svg>
+          </button>
+          <button id="play" type="button" class="icon-btn primary" aria-label="Play">
+            <svg class="icon-play" viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M4.5 2.5v11L13.5 8z" /></svg>
+            <svg class="icon-pause" viewBox="0 0 16 16" aria-hidden="true"><path class="fill" d="M4 2.5h3v11H4zM9 2.5h3v11H9z" /></svg>
+          </button>
+          <div class="seg" role="group" aria-label="Speed">
+            <button type="button" data-speed="day" aria-pressed="true">Day/s</button>
+            <button type="button" data-speed="month" aria-pressed="false">Month/s</button>
+            <button type="button" data-speed="year" aria-pressed="false">Year/s</button>
+          </div>
+          <button id="now" type="button" class="btn small">Now</button>
+        </div>
+        <div class="group">
+          <button id="open-probes" type="button" class="btn small">Probes</button>
+          <button id="open-events" type="button" class="btn small">Events</button>
+          <div class="seg" role="group" aria-label="Scale">
+            <button type="button" data-scale="real" aria-pressed="true" title="True distances">Real</button>
+            <button type="button" data-scale="compressed" aria-pressed="false" title="Distances compressed so everything fits">Compressed</button>
+          </div>
+        </div>
+      </div>
+    </footer>
 
     <div id="loading" class="loading" role="status">Loading the solar system…</div>
 

@@ -1,20 +1,28 @@
-// The 3D view: Sun, planets, orbits, stars, labels and camera controls.
+// The 3D view: Sun, planets, probes, orbits, trails, stars, labels and camera.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { AU_KM, SUN, PLANETS, SATURN_RINGS } from './bodies.js';
-import { scenePosition, orbitPoints, northPoleScene } from './astro.js';
+import { helioEcliptic, eclipticToScene, orbitEcliptic, northPoleScene } from './astro.js';
+import { toDisplay, localScale } from './scale.js';
+import { positionAt, sampleIndex, velocityAt, msToDays, daysToMs } from './trajectory.js';
 
-const DEFAULT_VIEW = { distance: 14, elevationDeg: 38, azimuthDeg: -60 };
-const TAP_RADIUS_PX = 28;
-const FOCUS_DURATION_MS = 900;
+const DEFAULT_DISTANCE = { real: 14, compressed: 7 };
+const DEFAULT_ELEVATION_DEG = 38;
+const DEFAULT_AZIMUTH_DEG = -60;
+const TAP_RADIUS_PX = 26;
+const FOCUS_DURATION_MS = 1000;
+const PROBE_MIN_PX = 3.4;
 
 /**
  * Starts the 3D view in `container`.
- * `onFatal(reason)` is called if rendering cannot continue.
+ *  onFrame(dtSeconds) -> current simulation time (ms); called before every frame.
+ *  onFatal(reason)    -> rendering cannot continue.
+ *  onFocusChange(summary) -> the centred body changed.
+ *  onSelect(id)       -> the user tapped a body.
  */
-export function startApp({ container, date, onFatal, onFocusChange }) {
+export function startApp({ container, time, onFrame, onFatal, onFocusChange, onSelect }) {
   // ---------- Renderer ----------
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'default' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -37,23 +45,27 @@ export function startApp({ container, date, onFatal, onFocusChange }) {
   controls.rotateSpeed = 0.7;
   controls.zoomSpeed = 1.1;
   controls.screenSpacePanning = true;
-  controls.maxDistance = 250;
-  controls.minDistance = 0.0005;
+  controls.maxDistance = 400;
+  controls.minDistance = 0.00002;
   controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
   // ---------- Light ----------
-  const sunLight = new THREE.PointLight(0xffffff, 2.2, 0, 0);
-  scene.add(sunLight);
+  scene.add(new THREE.PointLight(0xffffff, 2.2, 0, 0));
   scene.add(new THREE.AmbientLight(0xffffff, 0.12));
 
-  // ---------- Stars (drawn behind everything, follow the camera) ----------
   const stars = makeStars();
   scene.add(stars);
 
-  // ---------- Bodies ----------
+  // ---------- State ----------
+  let mode = 'real';
+  let simMs = time;
+  let simDays = msToDays(simMs);
   const bodies = [];
-  const sphereGeo = new THREE.SphereGeometry(1, 96, 64);
+  const byId = new Map();
+  const planetHelio = {}; // current heliocentric positions (AU, ecliptic) by planet id
 
+  // ---------- Sun ----------
+  const sphereGeo = new THREE.SphereGeometry(1, 96, 64);
   const sunMesh = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: SUN.color }));
   const glow = new THREE.Sprite(
     new THREE.SpriteMaterial({
@@ -67,92 +79,353 @@ export function startApp({ container, date, onFatal, onFocusChange }) {
   glow.scale.setScalar(5);
   sunMesh.add(glow);
   scene.add(sunMesh);
-  bodies.push(makeBodyEntry(SUN, sunMesh, 0));
+  addEntry({ kind: 'sun', id: 'Sun', name: SUN.name, label: SUN.name, info: SUN, mesh: sunMesh, priority: 0, minPx: SUN.minPx });
 
+  // ---------- Planets ----------
+  const startDate = new Date(simMs);
   for (const p of PLANETS) {
     const mesh = new THREE.Mesh(
       sphereGeo,
       new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.9, metalness: 0 }),
     );
-    if (p.rings) addSaturnRings(mesh, date);
+    if (p.rings) addSaturnRings(mesh, startDate);
     scene.add(mesh);
-    scene.add(makeOrbitLine(p, date));
-    bodies.push(makeBodyEntry(p, mesh, p.priority));
+    const orbit = makeOrbit(p, startDate);
+    scene.add(orbit.line);
+    addEntry({ kind: 'planet', id: p.id, name: p.name, label: p.name, info: p, mesh, orbit, priority: p.priority, minPx: p.minPx });
   }
 
-  function makeBodyEntry(info, mesh, priority) {
+  // ---------- Probes ----------
+  const probeGeo = new THREE.OctahedronGeometry(1, 0);
+  const dashMaterials = [];
+
+  function addProbes(list) {
+    for (const { probe, traj } of list) {
+      if (byId.has(probe.id)) continue;
+      const mesh = new THREE.Mesh(probeGeo, new THREE.MeshBasicMaterial({ color: probe.color }));
+      scene.add(mesh);
+      const n = traj.t.length;
+      const posAttr = new THREE.BufferAttribute(new Float32Array(n * 3), 3);
+      const distAttr = new THREE.BufferAttribute(new Float32Array(n), 1);
+      const solidGeo = new THREE.BufferGeometry();
+      solidGeo.setAttribute('position', posAttr);
+      const plannedGeo = new THREE.BufferGeometry();
+      plannedGeo.setAttribute('position', posAttr);
+      plannedGeo.setAttribute('lineDistance', distAttr);
+      const solid = new THREE.Line(
+        solidGeo,
+        new THREE.LineBasicMaterial({ color: probe.color, transparent: true, opacity: 0.75 }),
+      );
+      const dashMat = new THREE.LineDashedMaterial({
+        color: probe.color,
+        transparent: true,
+        opacity: 0.6,
+        dashSize: 0.1,
+        gapSize: 0.08,
+      });
+      dashMaterials.push(dashMat);
+      const planned = new THREE.Line(plannedGeo, dashMat);
+      const headGeo = new THREE.BufferGeometry();
+      headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      headGeo.setAttribute('lineDistance', new THREE.BufferAttribute(new Float32Array(2), 1));
+      const head = new THREE.Line(headGeo, dashMat);
+      for (const l of [solid, planned, head]) {
+        l.frustumCulled = false;
+        scene.add(l);
+      }
+      const entry = addEntry({
+        kind: 'probe',
+        id: probe.id,
+        name: probe.name,
+        label: probe.short || probe.name,
+        info: probe,
+        mesh,
+        priority: 20,
+        minPx: PROBE_MIN_PX,
+      });
+      Object.assign(entry, {
+        traj,
+        generatedDays: msToDays(Date.parse(traj.generated)),
+        lines: { solid, planned, head, posAttr, distAttr, headGeo },
+        display: {}, // cached display coordinates per scale mode
+        state: 'before',
+      });
+      entry.genIndex = sampleIndex(traj.t, entry.generatedDays);
+      updateTrailGeometry(entry);
+    }
+    setTime(simMs, true);
+  }
+
+  function addEntry(e) {
     const el = document.createElement('button');
     el.type = 'button';
-    el.className = 'label';
-    el.textContent = info.name;
-    if (info.dwarf) el.title = `${info.name} (dwarf planet)`;
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      focusOn(entry);
+    el.className = `label label-${e.kind}`;
+    el.textContent = e.label;
+    if (e.kind === 'probe') el.style.setProperty('--probe-color', `#${e.info.color.toString(16).padStart(6, '0')}`);
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      select(entry);
     });
     const label = new CSS2DObject(el);
-    label.center.set(-0.12, 0.5); // label sits to the right of the body
+    label.center.set(-0.12, 0.5);
     scene.add(label);
     const entry = {
-      info,
-      mesh,
-      label,
+      ...e,
       el,
-      priority,
-      radiusAU: info.radiusKm / AU_KM,
+      labelObj: label,
+      radiusAU: (e.info.radiusKm || 0.001) / AU_KM,
+      helio: [0, 0, 0],
       position: new THREE.Vector3(),
       screen: new THREE.Vector2(),
+      pxRadius: 0,
+      visible: true,
       onScreen: false,
     };
+    bodies.push(entry);
+    byId.set(e.id, entry);
     return entry;
   }
 
-  // ---------- Positions ----------
-  function setDate(d) {
+  // ---------- Scale ----------
+  function planetLookupAt(ms) {
+    const date = new Date(ms);
+    const cache = {};
+    return (name) => {
+      if (!(name in cache)) {
+        const e = helioEcliptic(name, date);
+        cache[name] = [e.x, e.y, e.z];
+      }
+      return cache[name];
+    };
+  }
+
+  function updateTrailGeometry(entry) {
+    let pts = entry.display[mode];
+    if (!pts) {
+      const { t, p } = entry.traj;
+      const n = t.length;
+      pts = { pos: new Float32Array(n * 3), dist: new Float32Array(n) };
+      const v = [0, 0, 0];
+      const out = [0, 0, 0];
+      for (let i = 0; i < n; i++) {
+        v[0] = p[i * 3];
+        v[1] = p[i * 3 + 1];
+        v[2] = p[i * 3 + 2];
+        toDisplay(mode, v, mode === 'compressed' ? planetLookupAt(daysToMs(t[i])) : null, out);
+        pts.pos.set(eclipticToScene({ x: out[0], y: out[1], z: out[2] }), i * 3);
+        if (i > 0) {
+          const dx = pts.pos[i * 3] - pts.pos[i * 3 - 3];
+          const dy = pts.pos[i * 3 + 1] - pts.pos[i * 3 - 2];
+          const dz = pts.pos[i * 3 + 2] - pts.pos[i * 3 - 1];
+          pts.dist[i] = pts.dist[i - 1] + Math.hypot(dx, dy, dz);
+        }
+      }
+      entry.display[mode] = pts;
+    }
+    entry.lines.posAttr.array.set(pts.pos);
+    entry.lines.posAttr.needsUpdate = true;
+    entry.lines.distAttr.array.set(pts.dist);
+    entry.lines.distAttr.needsUpdate = true;
+    entry.lines.solid.geometry.computeBoundingSphere();
+  }
+
+  function updateOrbitGeometry(entry) {
+    const o = entry.orbit;
+    if (!o.cache[mode]) {
+      const arr = new Float32Array(o.ecliptic.length * 3);
+      const out = [0, 0, 0];
+      o.ecliptic.forEach((v, i) => {
+        toDisplay(mode, v, null, out);
+        arr.set(eclipticToScene({ x: out[0], y: out[1], z: out[2] }), i * 3);
+      });
+      o.cache[mode] = arr;
+    }
+    o.line.geometry.attributes.position.array.set(o.cache[mode]);
+    o.line.geometry.attributes.position.needsUpdate = true;
+    o.line.geometry.computeBoundingSphere();
+  }
+
+  /** How much the current scale enlarges space around an entry. */
+  function kFor(entry, m = mode) {
+    if (entry.kind === 'sun') return DEFAULT_DISTANCE[m] / DEFAULT_DISTANCE.real;
+    return localScale(m, Math.hypot(...entry.helio));
+  }
+
+  function setScale(newMode) {
+    if (newMode === mode) return;
+    const oldK = kFor(focused);
+    const offset = camera.position.clone().sub(controls.target);
+    mode = newMode;
     for (const b of bodies) {
-      if (b.info.id === 'Sun') b.position.set(0, 0, 0);
-      else b.position.fromArray(scenePosition(b.info.id, d));
+      if (b.orbit) updateOrbitGeometry(b);
+      if (b.traj) updateTrailGeometry(b);
+    }
+    setTime(simMs, true);
+    offset.multiplyScalar(kFor(focused) / oldK);
+    focusAnim.active = false;
+    controls.target.copy(focused.position);
+    camera.position.copy(focused.position).add(offset);
+    controls.update();
+  }
+
+  // ---------- Time ----------
+  const tmpV = [0, 0, 0];
+  const tmpOut = [0, 0, 0];
+
+  function setTime(ms, force = false) {
+    if (!force && ms === simMs) return;
+    simMs = ms;
+    simDays = msToDays(ms);
+    const date = new Date(ms);
+    for (const b of bodies) {
+      if (b.kind === 'planet') {
+        const e = helioEcliptic(b.id, date);
+        b.helio[0] = e.x;
+        b.helio[1] = e.y;
+        b.helio[2] = e.z;
+        planetHelio[b.id] = b.helio;
+      }
+    }
+    const lookup = (name) => planetHelio[name];
+    for (const b of bodies) {
+      if (b.kind === 'sun') {
+        b.position.set(0, 0, 0);
+      } else if (b.kind === 'planet') {
+        toDisplay(mode, b.helio, null, tmpOut);
+        b.position.fromArray(eclipticToScene({ x: tmpOut[0], y: tmpOut[1], z: tmpOut[2] }));
+      } else {
+        updateProbe(b, lookup);
+      }
       b.mesh.position.copy(b.position);
     }
   }
-  setDate(date);
+
+  function updateProbe(b, lookup) {
+    const { t } = b.traj;
+    const n = t.length;
+    const extrapolate = b.info.afterData === 'extrapolate';
+    const { solid, planned, head, headGeo } = b.lines;
+    const pts = b.display[mode];
+
+    if (simDays < t[0]) {
+      b.state = 'before';
+      b.visible = false;
+      solid.visible = planned.visible = head.visible = false;
+      return;
+    }
+    const pos = positionAt(b.traj, simDays, tmpV, extrapolate);
+    const idx = Math.min(sampleIndex(t, simDays), n - 1);
+    const gen = b.genIndex;
+
+    // Trail up to the last sample before the current time; the part after the
+    // data was generated is a prediction and is drawn dashed.
+    const solidEnd = Math.min(idx, gen);
+    solid.geometry.setDrawRange(0, solidEnd + 1);
+    solid.visible = solidEnd >= 1;
+    if (idx > gen) {
+      planned.geometry.setDrawRange(gen, idx - gen + 1);
+      planned.visible = true;
+    } else {
+      planned.visible = false;
+    }
+
+    if (!pos) {
+      // After the end of the data for a probe that is not extrapolated.
+      b.state = 'ended';
+      b.visible = false;
+      head.visible = false;
+      return;
+    }
+    b.state = simDays > t[n - 1] ? 'extrapolated' : 'flying';
+    b.visible = true;
+    b.helio[0] = pos[0];
+    b.helio[1] = pos[1];
+    b.helio[2] = pos[2];
+    toDisplay(mode, pos, mode === 'compressed' ? lookup : null, tmpOut);
+    b.position.fromArray(eclipticToScene({ x: tmpOut[0], y: tmpOut[1], z: tmpOut[2] }));
+
+    // Short segment from the last sample to the current position.
+    const ha = headGeo.attributes.position.array;
+    ha[0] = pts.pos[idx * 3];
+    ha[1] = pts.pos[idx * 3 + 1];
+    ha[2] = pts.pos[idx * 3 + 2];
+    ha[3] = b.position.x;
+    ha[4] = b.position.y;
+    ha[5] = b.position.z;
+    headGeo.attributes.position.needsUpdate = true;
+    const hd = headGeo.attributes.lineDistance.array;
+    hd[0] = pts.dist[idx];
+    hd[1] = pts.dist[idx] + Math.hypot(ha[3] - ha[0], ha[4] - ha[1], ha[5] - ha[2]);
+    headGeo.attributes.lineDistance.needsUpdate = true;
+    const predicted = simDays > b.generatedDays || b.state === 'extrapolated';
+    head.material = predicted ? planned.material : solid.material;
+    head.visible = true;
+  }
 
   // ---------- Camera / focus ----------
-  let focused = bodies[0];
-  const focusAnim = { active: false, from: new THREE.Vector3(), start: 0 };
-  const tmp = new THREE.Vector3();
+  let focused = byId.get('Sun');
+  let following = false;
+  const focusAnim = { active: false, from: new THREE.Vector3(), fromDist: 0, toDist: 0, start: 0 };
+
+  function defaultDistance() {
+    const aspect = camera.aspect || 1;
+    return DEFAULT_DISTANCE[mode] * (aspect < 1 ? Math.sqrt(1 / aspect) : 1);
+  }
 
   function setDefaultView() {
-    const el = THREE.MathUtils.degToRad(DEFAULT_VIEW.elevationDeg);
-    const az = THREE.MathUtils.degToRad(DEFAULT_VIEW.azimuthDeg);
-    const d = DEFAULT_VIEW.distance;
+    const el = THREE.MathUtils.degToRad(DEFAULT_ELEVATION_DEG);
+    const az = THREE.MathUtils.degToRad(DEFAULT_AZIMUTH_DEG);
+    const d = defaultDistance();
     controls.target.set(0, 0, 0);
-    camera.position.set(
-      d * Math.cos(el) * Math.cos(az),
-      d * Math.sin(el),
-      -d * Math.cos(el) * Math.sin(az),
-    );
+    camera.position.set(d * Math.cos(el) * Math.cos(az), d * Math.sin(el), -d * Math.cos(el) * Math.sin(az));
     camera.up.set(0, 1, 0);
     controls.update();
   }
-  setDefaultView();
 
-  function focusOn(entry) {
+  function summary(entry) {
+    return { id: entry.id, kind: entry.kind, name: entry.name, following };
+  }
+
+  /** Centre the camera on an entry; `distanceAU` (optional) zooms to that distance (real-scale AU). */
+  function focusOn(entry, distanceAU) {
+    if (!entry) return;
     focused = entry;
     focusAnim.active = true;
     focusAnim.from.copy(controls.target);
+    focusAnim.fromDist = camera.position.distanceTo(controls.target);
+    focusAnim.toDist = distanceAU ? distanceAU * kFor(entry) : focusAnim.fromDist;
     focusAnim.start = performance.now();
-    onFocusChange?.(entry.info);
+    onFocusChange?.(summary(entry));
+  }
+
+  function select(entry) {
+    following = false;
+    focusOn(entry);
+    onSelect?.(entry.id);
+  }
+
+  function follow(id, distanceAU) {
+    const entry = byId.get(id);
+    if (!entry) return;
+    following = entry.kind === 'probe';
+    focusOn(entry, distanceAU ?? followDistance(entry));
+  }
+
+  function followDistance(entry) {
+    // Close enough to see the trail bend, further out for probes far from the Sun.
+    const r = Math.hypot(...entry.helio);
+    return Math.min(8, Math.max(0.25, r * 0.12));
   }
 
   function resetView() {
-    focused = bodies[0];
+    focused = byId.get('Sun');
+    following = false;
     focusAnim.active = false;
     setDefaultView();
-    onFocusChange?.(focused.info);
+    onFocusChange?.(summary(focused));
   }
 
-  // Tap/click on (or near) a body focuses it.
+  // Tap/click on (or near) a body selects it.
   const down = { x: 0, y: 0, t: 0, id: null };
   renderer.domElement.addEventListener('pointerdown', (e) => {
     if (!e.isPrimary) return;
@@ -171,29 +444,47 @@ export function startApp({ container, date, onFatal, onFocusChange }) {
     let best = null;
     let bestDist = TAP_RADIUS_PX;
     for (const b of bodies) {
-      if (!b.onScreen) continue;
-      const dist = Math.hypot(b.screen.x - x, b.screen.y - y) - b.pxRadius;
+      if (!b.onScreen || !b.visible) continue;
+      const dist = Math.hypot(b.screen.x - x, b.screen.y - y) - Math.min(b.pxRadius, 200);
       if (dist < bestDist) {
         bestDist = dist;
         best = b;
       }
     }
-    if (best) focusOn(best);
+    if (best) select(best);
   });
 
   // ---------- Resize ----------
   let width = 1;
   let height = 1;
+  let insetBottom = 0;
   function resize() {
     width = Math.max(1, container.clientWidth);
     height = Math.max(1, container.clientHeight);
     renderer.setSize(width, height, false);
     labelRenderer.setSize(width, height);
     camera.aspect = width / height;
+    applyViewOffset();
+  }
+
+  // Shift the picture up when a panel covers the bottom of the screen, so the
+  // centred body stays visible above it.
+  function applyViewOffset() {
+    const shift = Math.round(Math.min(insetBottom, height * 0.6) / 2);
+    if (shift > 0) camera.setViewOffset(width, height, 0, shift, width, height);
+    else camera.clearViewOffset();
     camera.updateProjectionMatrix();
+  }
+
+  function setBottomInset(px) {
+    insetBottom = Math.max(0, px);
+    applyViewOffset();
   }
   new ResizeObserver(resize).observe(container);
   resize();
+  setTime(simMs, true);
+  for (const b of bodies) if (b.orbit) updateOrbitGeometry(b);
+  setDefaultView();
 
   // ---------- Context loss ----------
   let lost = false;
@@ -214,19 +505,26 @@ export function startApp({ container, date, onFatal, onFocusChange }) {
 
   // ---------- Per-frame updates ----------
   const projected = new THREE.Vector3();
+  const tmp = new THREE.Vector3();
+  const delta = new THREE.Vector3();
 
   function updateFocus(now) {
     if (focusAnim.active) {
       const t = Math.min(1, (now - focusAnim.start) / FOCUS_DURATION_MS);
       const k = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      const newTarget = tmp.copy(focusAnim.from).lerp(focused.position, k);
-      const delta = newTarget.clone().sub(controls.target);
+      tmp.copy(focusAnim.from).lerp(focused.position, k);
+      delta.copy(tmp).sub(controls.target);
       controls.target.add(delta);
       camera.position.add(delta);
+      if (focusAnim.toDist !== focusAnim.fromDist) {
+        const d = Math.exp(Math.log(focusAnim.fromDist) + (Math.log(focusAnim.toDist) - Math.log(focusAnim.fromDist)) * k);
+        const dir = tmp.copy(camera.position).sub(controls.target).normalize();
+        camera.position.copy(controls.target).addScaledVector(dir, d);
+      }
       if (t >= 1) focusAnim.active = false;
     } else if (!controls.target.equals(focused.position)) {
-      // Keep following the focused body (it will move once time can change).
-      const delta = tmp.copy(focused.position).sub(controls.target);
+      // Keep following the centred body as time runs.
+      delta.copy(focused.position).sub(controls.target);
       controls.target.add(delta);
       camera.position.add(delta);
     }
@@ -235,13 +533,18 @@ export function startApp({ container, date, onFatal, onFocusChange }) {
   function updateSizesAndLabels() {
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     const placed = [];
-    const order = [...bodies].sort(
-      (a, b) => (a === focused ? -1 : b === focused ? 1 : a.priority - b.priority),
-    );
+    const order = [...bodies].sort((a, b) => (a === focused ? -1 : b === focused ? 1 : a.priority - b.priority));
     for (const b of order) {
+      b.mesh.visible = b.visible;
+      if (!b.visible) {
+        b.labelObj.visible = false;
+        b.onScreen = false;
+        continue;
+      }
       const dist = camera.position.distanceTo(b.position);
       const worldPerPx = (2 * dist * tanHalf) / height;
-      const r = Math.max(b.radiusAU, b.info.minPx * worldPerPx);
+      const k = b.kind === 'sun' ? 1 : kFor(b);
+      const r = Math.max(b.radiusAU * k, b.minPx * worldPerPx);
       b.mesh.scale.setScalar(r);
       b.pxRadius = r / worldPerPx;
 
@@ -249,39 +552,48 @@ export function startApp({ container, date, onFatal, onFocusChange }) {
       b.onScreen = projected.z < 1 && Math.abs(projected.x) < 1.1 && Math.abs(projected.y) < 1.1;
       b.screen.set((projected.x + 1) * 0.5 * width, (1 - projected.y) * 0.5 * height);
 
-      // Place the label just beside the drawn sphere and hide it if it would overlap another.
-      b.label.position.copy(b.position);
-      b.label.element.style.marginLeft = `${Math.min(b.pxRadius, 60)}px`;
+      b.labelObj.position.copy(b.position);
+      b.el.style.marginLeft = `${Math.min(b.pxRadius, 60)}px`;
       const box = {
         x0: b.screen.x + b.pxRadius,
-        x1: b.screen.x + b.pxRadius + 8 + b.info.name.length * 7.5,
-        y0: b.screen.y - 10,
-        y1: b.screen.y + 10,
+        x1: b.screen.x + b.pxRadius + 8 + b.label.length * 7,
+        y0: b.screen.y - 9,
+        y1: b.screen.y + 9,
       };
-      const overlaps = placed.some(
-        (o) => box.x0 < o.x1 && box.x1 > o.x0 && box.y0 < o.y1 && box.y1 > o.y0,
-      );
-      // A body that fills much of the screen needs no label.
+      const overlaps = placed.some((o) => box.x0 < o.x1 && box.x1 > o.x0 && box.y0 < o.y1 && box.y1 > o.y0);
       const show = b.onScreen && !overlaps && b.pxRadius < 80;
-      b.label.visible = show;
+      b.labelObj.visible = show;
       if (show) placed.push(box);
       b.el.classList.toggle('is-focused', b === focused);
+      if (b.lines) {
+        const strong = b === focused;
+        b.lines.solid.material.opacity = strong ? 0.95 : 0.45;
+        b.lines.planned.material.opacity = strong ? 0.85 : 0.4;
+      }
     }
-    controls.minDistance = Math.max(focused.radiusAU * 2.5, 0.00002);
+    controls.minDistance = Math.max(focused.radiusAU * kFor(focused) * 2.5, 0.00002);
   }
 
   function updateClipping() {
     const d = camera.position.distanceTo(controls.target);
     camera.near = Math.max(d * 0.0005, 1e-7);
-    camera.far = d + 400;
+    camera.far = d + 600;
     camera.updateProjectionMatrix();
     stars.position.copy(camera.position);
+    for (const m of dashMaterials) {
+      m.dashSize = d * 0.012;
+      m.gapSize = d * 0.009;
+    }
   }
 
   let firstFrame = true;
+  let last = performance.now();
   renderer.setAnimationLoop((now) => {
     if (lost) return;
     try {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (onFrame) setTime(onFrame(dt));
       updateFocus(now);
       controls.update();
       updateClipping();
@@ -298,20 +610,68 @@ export function startApp({ container, date, onFatal, onFocusChange }) {
     }
   });
 
-  return { setDate, resetView, focusOn: (id) => focusOn(bodies.find((b) => b.info.id === id)) };
+  // ---------- Info for the UI ----------
+  function getInfo(id) {
+    const b = byId.get(id);
+    if (!b) return null;
+    const earth = planetHelio.Earth;
+    const info = {
+      id: b.id,
+      kind: b.kind,
+      name: b.name,
+      data: b.info,
+      state: b.kind === 'probe' ? b.state : 'flying',
+      helio: b.kind === 'sun' ? [0, 0, 0] : [...b.helio],
+      earth: earth ? [...earth] : null,
+      speedKmS: null,
+      predicted: false,
+    };
+    if (b.kind === 'probe') {
+      info.dataStart = daysToMs(b.traj.t[0]);
+      info.dataEnd = daysToMs(b.traj.t[b.traj.t.length - 1]);
+      info.generated = daysToMs(b.generatedDays);
+      info.predicted = simDays > b.generatedDays;
+      if (b.state === 'flying' || b.state === 'extrapolated') {
+        const v = velocityAt(b.traj, Math.min(simDays, b.traj.t[b.traj.t.length - 1]));
+        info.speedKmS = (Math.hypot(v[0], v[1], v[2]) * AU_KM) / 86400;
+      }
+    }
+    return info;
+  }
+
+  return {
+    setTime: (ms) => setTime(ms),
+    setScale,
+    get scale() {
+      return mode;
+    },
+    resetView,
+    follow,
+    select: (id) => byId.get(id) && select(byId.get(id)),
+    addProbes,
+    getInfo,
+    setBottomInset,
+    get focusedId() {
+      return focused.id;
+    },
+    get followingId() {
+      return following ? focused.id : null;
+    },
+  };
 }
 
 // ---------- Helpers ----------
 
-function makeOrbitLine(planet, date) {
+function makeOrbit(planet, date) {
+  const ecliptic = orbitEcliptic(planet.id, date, 512);
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(orbitPoints(planet.id, date, 512), 3));
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ecliptic.length * 3), 3));
   const mat = new THREE.LineBasicMaterial({
     color: planet.color,
     transparent: true,
     opacity: planet.dwarf ? 0.22 : 0.38,
   });
-  return new THREE.LineLoop(geo, mat);
+  return { line: new THREE.LineLoop(geo, mat), ecliptic, cache: {} };
 }
 
 function addSaturnRings(mesh, date) {
