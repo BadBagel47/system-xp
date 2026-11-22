@@ -42,4 +42,4 @@ Note for F-003: commits pushed by a workflow with `GITHUB_TOKEN` do not trigger 
 - The repo has no licence file yet (see D-011).
 
 ## Latest entries
-- 2026-11-22: Repo set up according to agent rules v1.14; F-001 and F-009 built and pushed.
+- 2026-11-22: Repo set up according to agent rules v1.14; F-001 and F-009 built and pushed. First deploy run: tests + build OK, publishing blocked until Pages is enabled (F-010).

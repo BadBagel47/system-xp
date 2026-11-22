@@ -7,6 +7,7 @@ The user's original feature list (1–6) is noted in brackets.
 
 | ID | Priority | Status | Title |
 |----|----------|--------|-------|
+| F-010 | High | Waiting for user (one-time Pages setting) | Publishing via GitHub Pages after every push to main |
 | F-002 | High | Open | Time controls [2] |
 | F-003 | High | Open | Probe data from NASA/JPL Horizons via GitHub Action [3] |
 | F-004 | High | Open | Probes in 3D with trails up to the chosen date [3] |
@@ -15,6 +16,9 @@ The user's original feature list (1–6) is noted in brackets.
 | F-007 | Medium | Open | Info panel when tapping a planet or probe [6] |
 | F-008 | Medium | Open | Camera mode that follows a probe [6] |
 | D-011 | Low | Open | Choose a licence for the code |
+
+### F-010 – GitHub Pages publishing
+`.github/workflows/deploy.yml` (tests, builds and publishes on every push to `main`; can be called by other workflows) is in place. First run 2026-11-22: tests and build passed, publishing stopped because Pages is not enabled. When the user has set Settings → Pages → Source to "GitHub Actions": re-run the workflow and check the live URL, then move to Done.
 
 ### F-002 – Time controls [2]
 Date picker, play/pause, speeds (day/s, month/s, year/s), "Now" button. Scroll both forwards and backwards in time. Planets (and later probes) move accordingly; the camera keeps following the focused body (already supported).
@@ -51,7 +55,6 @@ Without a licence file the code is "all rights reserved". Options: MIT (anyone m
 |----|----------|------|-------|
 | F-001 | High | 2026-11-22 | Foundation: Sun + planets at the right place, camera controls [1] |
 | F-009 | High | 2026-11-22 | Clear message when 3D (WebGL) can't start – e.g. Brave on Pixel 10 Pro |
-| F-010 | High | 2026-11-22 | Publishing via GitHub Pages after every push to main (needs the one-time Pages setting, see HANDOFF.md) |
 
 ### F-001 – Foundation [1]
 Sun, 8 planets and Pluto at their real heliocentric positions for today (astronomy-engine), orbit lines, Saturn's rings with the real tilt, starfield, labels that avoid overlapping, tap/click to centre a planet, Overview button. Controls: one finger rotates, pinch zooms, two fingers pan; mouse drag/scroll/right-drag.
@@ -59,8 +62,6 @@ Sun, 8 planets and Pluto at their real heliocentric positions for today (astrono
 ### F-009 – 3D start-up failure message
 WebGL 2 check before starting, friendly message with tips for Brave/hardware acceleration/other browser and a "Try again" button; also handles a lost graphics context and render errors. Not yet tried in Brave on the user's Pixel 10 Pro.
 
-### F-010 – GitHub Pages publishing
-`.github/workflows/deploy.yml`: tests, builds and publishes on every push to `main`; can also be called by other workflows.
 
 ## Proposed runs
 Prioritised for: visible movement first, then the probes.
