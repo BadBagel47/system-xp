@@ -7,14 +7,10 @@ The user's original feature list (1–6) is noted in brackets.
 
 | ID | Priority | Status | Title |
 |----|----------|--------|-------|
-| F-010 | High | Waiting for user (one-time Pages setting) | Publishing via GitHub Pages after every push to main |
 | D-014 | Low | Open – question for the user | Default scale when the page opens |
 | F-012 | Low | Open | Slower speed (hour/s) to watch flybys |
 | F-013 | Low | Open | Finer trajectory detail close to planets |
 | D-011 | Low | Open – question for the user | Choose a licence for the code |
-
-### F-010 – GitHub Pages publishing
-`.github/workflows/deploy.yml` (tests, builds and publishes on every push to `main`; also called by the data update workflow) is in place. First run 2026-11-22: tests and build passed, publishing stopped because Pages is not enabled. When the user has set Settings → Pages → Source to "GitHub Actions": re-run the workflow, check the live URL, then move to Done.
 
 ### D-014 – Default scale
 The page opens in real scale; compressed is one tap away (F-005).
@@ -42,6 +38,7 @@ Without a licence file the code is "all rights reserved". Options: MIT (anyone m
 | F-006 | Medium | 2026-11-22 | Timeline events you can jump to [5] |
 | F-007 | Medium | 2026-11-22 | Info panel when tapping a planet or probe [6] |
 | F-008 | Medium | 2026-11-22 | Camera mode that follows a probe [6] |
+| F-010 | High | 2026-11-22 | Publishing via GitHub Pages after every push to main |
 
 ### F-001 – Foundation [1]
 Sun, 8 planets and Pluto at their real heliocentric positions (astronomy-engine), orbit lines, Saturn's rings with the real tilt, starfield, labels that avoid overlapping, tap/click to centre, Overview button. Controls: one finger rotates, pinch zooms, two fingers pan; mouse drag/scroll/right-drag.
@@ -67,12 +64,14 @@ Real (1 unit = 1 AU) or compressed (distance from the Sun → square root; near 
 ### F-007 – Info panel [6]
 Sun/planets: distance from the Sun and Earth, orbital period, radius. Probes: agency, launch date, status (not launched / ended / predicted / extrapolated), distances, speed relative to the Sun, signal time to Earth, summary, data credit. Updates live. On phones it is a bottom panel and the 3D view shifts up so the probe stays visible.
 
+### F-010 – GitHub Pages publishing
+`.github/workflows/deploy.yml` tests, builds and publishes on every push to `main`; also called by the data update workflow. Live since 2026-11-22 after the user enabled Pages (source: GitHub Actions); checked in a phone-sized browser (3D starts, 11 probes load, only github.io is contacted).
+
 ### F-008 – Follow a probe [6]
 "Follow" in the info panel and the Probes list: centres and zooms to the probe and keeps it centred while time runs.
 
 ## Proposed runs
 Prioritised for: getting the site live first, then small improvements.
-- (No agent run is needed for F-010 – it waits for the one-time Pages setting.)
 - **A** – strong model, medium level – Watching flybys
   - F-012 – Add an hour/s speed so flybys can be followed
 - **B** – strong model, high level – Detail near planets
