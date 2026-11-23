@@ -8,8 +8,8 @@ The user's original feature list (1–6) is noted in brackets.
 | ID | Priority | Status | Title |
 |----|----------|--------|-------|
 | D-014 | Low | Open – question for the user | Default scale when the page opens |
-| F-012 | Low | Open | Slower speed (hour/s) to watch flybys |
-| F-013 | Low | Open | Finer trajectory detail close to planets |
+| F-012 | Low | Pågår 2026-11-23 (session_019KYzr9B6MQwkqTnCDiKoiM) | Slower speed (hour/s) to watch flybys |
+| F-013 | Low | Pågår 2026-11-23 (session_019KYzr9B6MQwkqTnCDiKoiM) | Finer trajectory detail close to planets |
 | D-011 | Low | Open – question for the user | Choose a licence for the code |
 
 ### D-014 – Default scale
