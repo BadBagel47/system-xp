@@ -7,6 +7,7 @@ import { AU_KM, SUN, PLANETS, SATURN_RINGS } from './bodies.js';
 import { helioEcliptic, eclipticToScene, orbitEcliptic, northPoleScene } from './astro.js';
 import { toDisplay, localScale } from './scale.js';
 import { positionAt, sampleIndex, velocityAt, msToDays, daysToMs } from './trajectory.js';
+import { rteLineMaterial, rteAttributes, fillHighLow, updateRteCamera } from './rte-line.js';
 
 const DEFAULT_DISTANCE = { real: 14, compressed: 7 };
 const DEFAULT_ELEVATION_DEG = 38;
@@ -104,22 +105,13 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
       if (byId.has(probe.id)) continue;
       const mesh = new THREE.Mesh(probeGeo, new THREE.MeshBasicMaterial({ color: probe.color }));
       scene.add(mesh);
-      const solid = new THREE.Line(
-        new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: probe.color, transparent: true, opacity: 0.75 }),
-      );
-      const dashMat = new THREE.LineDashedMaterial({
-        color: probe.color,
-        transparent: true,
-        opacity: 0.6,
-        dashSize: 0.1,
-        gapSize: 0.08,
-      });
+      const solid = new THREE.Line(new THREE.BufferGeometry(), rteLineMaterial({ color: probe.color, opacity: 0.75 }));
+      const dashMat = rteLineMaterial({ color: probe.color, opacity: 0.6, dashed: true });
       dashMaterials.push(dashMat);
       const planned = new THREE.Line(new THREE.BufferGeometry(), dashMat);
       const headGeo = new THREE.BufferGeometry();
-      headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
-      headGeo.setAttribute('lineDistance', new THREE.BufferAttribute(new Float32Array(2), 1));
+      const headAttrs = rteAttributes(new Float64Array(6));
+      for (const [name, attr] of Object.entries(headAttrs)) headGeo.setAttribute(name, attr);
       const head = new THREE.Line(headGeo, dashMat);
       for (const l of [solid, planned, head]) {
         l.frustumCulled = false;
@@ -149,18 +141,18 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
     entry.generatedDays = msToDays(Date.parse(traj.generated));
     entry.genIndex = sampleIndex(traj.t, entry.generatedDays);
     entry.display = {}; // cached display coordinates per scale mode
-    const posAttr = new THREE.BufferAttribute(new Float32Array(n * 3), 3);
-    const distAttr = new THREE.BufferAttribute(new Float32Array(n), 1);
+    // Both lines share the same vertex data (high and low parts, distance along the path).
+    const attrs = rteAttributes(new Float64Array(n * 3), new Float32Array(n));
     const { solid, planned } = entry.lines;
     solid.geometry.dispose();
     planned.geometry.dispose();
     solid.geometry = new THREE.BufferGeometry();
-    solid.geometry.setAttribute('position', posAttr);
     planned.geometry = new THREE.BufferGeometry();
-    planned.geometry.setAttribute('position', posAttr);
-    planned.geometry.setAttribute('lineDistance', distAttr);
-    entry.lines.posAttr = posAttr;
-    entry.lines.distAttr = distAttr;
+    for (const [name, attr] of Object.entries(attrs)) {
+      solid.geometry.setAttribute(name, attr);
+      planned.geometry.setAttribute(name, attr);
+    }
+    entry.lines.attrs = attrs;
     updateTrailGeometry(entry);
   }
 
@@ -226,7 +218,7 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
     if (!pts) {
       const { t, p } = entry.traj;
       const n = t.length;
-      pts = { pos: new Float32Array(n * 3), dist: new Float32Array(n) };
+      pts = { pos: new Float64Array(n * 3), dist: new Float64Array(n) };
       const v = [0, 0, 0];
       const out = [0, 0, 0];
       for (let i = 0; i < n; i++) {
@@ -244,17 +236,18 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
       }
       entry.display[mode] = pts;
     }
-    entry.lines.posAttr.array.set(pts.pos);
-    entry.lines.posAttr.needsUpdate = true;
-    entry.lines.distAttr.array.set(pts.dist);
-    entry.lines.distAttr.needsUpdate = true;
+    const { position, positionLow, lineDistance } = entry.lines.attrs;
+    fillHighLow(pts.pos, position.array, positionLow.array);
+    lineDistance.array.set(pts.dist);
+    position.needsUpdate = positionLow.needsUpdate = lineDistance.needsUpdate = true;
+    entry.lines.planned.material.userData.total = pts.dist[pts.dist.length - 1] || 1;
     entry.lines.solid.geometry.computeBoundingSphere();
   }
 
   function updateOrbitGeometry(entry) {
     const o = entry.orbit;
     if (!o.cache[mode]) {
-      const arr = new Float32Array(o.ecliptic.length * 3);
+      const arr = new Float64Array(o.ecliptic.length * 3);
       const out = [0, 0, 0];
       o.ecliptic.forEach((v, i) => {
         toDisplay(mode, v, null, out);
@@ -262,8 +255,9 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
       });
       o.cache[mode] = arr;
     }
-    o.line.geometry.attributes.position.array.set(o.cache[mode]);
-    o.line.geometry.attributes.position.needsUpdate = true;
+    const g = o.line.geometry.attributes;
+    fillHighLow(o.cache[mode], g.position.array, g.positionLow.array);
+    g.position.needsUpdate = g.positionLow.needsUpdate = true;
     o.line.geometry.computeBoundingSphere();
   }
 
@@ -322,6 +316,8 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
     }
   }
 
+  const headPos = new Float64Array(6);
+
   function updateProbe(b, lookup) {
     const { t } = b.traj;
     const n = t.length;
@@ -367,18 +363,20 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
     b.position.fromArray(eclipticToScene({ x: tmpOut[0], y: tmpOut[1], z: tmpOut[2] }));
 
     // Short segment from the last sample to the current position.
-    const ha = headGeo.attributes.position.array;
+    const ha = headPos;
     ha[0] = pts.pos[idx * 3];
     ha[1] = pts.pos[idx * 3 + 1];
     ha[2] = pts.pos[idx * 3 + 2];
     ha[3] = b.position.x;
     ha[4] = b.position.y;
     ha[5] = b.position.z;
-    headGeo.attributes.position.needsUpdate = true;
-    const hd = headGeo.attributes.lineDistance.array;
+    const ga = headGeo.attributes;
+    fillHighLow(ha, ga.position.array, ga.positionLow.array);
+    ga.position.needsUpdate = ga.positionLow.needsUpdate = true;
+    const hd = ga.lineDistance.array;
     hd[0] = pts.dist[idx];
     hd[1] = pts.dist[idx] + Math.hypot(ha[3] - ha[0], ha[4] - ha[1], ha[5] - ha[2]);
-    headGeo.attributes.lineDistance.needsUpdate = true;
+    ga.lineDistance.needsUpdate = true;
     const predicted = simDays > b.generatedDays || b.state === 'extrapolated';
     head.material = predicted ? planned.material : solid.material;
     head.visible = true;
@@ -589,8 +587,8 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
       b.el.classList.toggle('is-focused', b === focused);
       if (b.lines) {
         const strong = b === focused;
-        b.lines.solid.material.opacity = strong ? 0.95 : 0.45;
-        b.lines.planned.material.opacity = strong ? 0.85 : 0.4;
+        b.lines.solid.material.uniforms.opacity.value = strong ? 0.95 : 0.45;
+        b.lines.planned.material.uniforms.opacity.value = strong ? 0.85 : 0.4;
       }
     }
     controls.minDistance = Math.max(focused.radiusAU * kFor(focused) * 2.5, 0.00002);
@@ -603,8 +601,12 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
     camera.updateProjectionMatrix();
     stars.position.copy(camera.position);
     for (const m of dashMaterials) {
-      m.dashSize = d * 0.012;
-      m.gapSize = d * 0.009;
+      const u = m.uniforms;
+      u.dashSize.value = d * 0.012;
+      u.gapSize.value = d * 0.009;
+      // Distances along the path are 32-bit: when dashes get smaller than that
+      // precision (extreme zoom), draw the planned part as a faint solid line.
+      u.dashed.value = d * 0.012 > (m.userData.total || 1) * 2e-6 ? 1 : 0;
     }
   }
 
@@ -620,6 +622,7 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
       controls.update();
       updateClipping();
       updateSizesAndLabels();
+      updateRteCamera(camera);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
       if (firstFrame) {
@@ -689,12 +692,11 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
 function makeOrbit(planet, date) {
   const ecliptic = orbitEcliptic(planet.id, date, 512);
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ecliptic.length * 3), 3));
-  const mat = new THREE.LineBasicMaterial({
-    color: planet.color,
-    transparent: true,
-    opacity: planet.dwarf ? 0.22 : 0.38,
-  });
+  const attrs = rteAttributes(new Float64Array(ecliptic.length * 3));
+  geo.setAttribute('position', attrs.position);
+  geo.setAttribute('positionLow', attrs.positionLow);
+  geo.setAttribute('lineDistance', attrs.lineDistance);
+  const mat = rteLineMaterial({ color: planet.color, opacity: planet.dwarf ? 0.22 : 0.38 });
   return { line: new THREE.LineLoop(geo, mat), ecliptic, cache: {} };
 }
 
