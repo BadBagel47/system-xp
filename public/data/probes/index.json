@@ -2,81 +2,158 @@
   "probes": {
     "voyager-1": {
       "file": "voyager-1.json",
-      "generated": "2026-11-22",
-      "start": -8152.91597,
-      "end": 18627.49931,
-      "points": 406
+      "detail": "voyager-1.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter",
+        "Saturn"
+      ],
+      "generated": "2026-11-23",
+      "start": -8152.91653,
+      "end": 18627.49821,
+      "points": 405,
+      "detailPoints": 433
     },
     "voyager-2": {
       "file": "voyager-2.json",
-      "generated": "2026-11-22",
-      "start": -8168.85139,
-      "end": 18627.49931,
-      "points": 464
+      "detail": "voyager-2.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter",
+        "Saturn",
+        "Uranus",
+        "Neptune"
+      ],
+      "generated": "2026-11-23",
+      "start": -8168.85195,
+      "end": 18627.49821,
+      "points": 462,
+      "detailPoints": 510
     },
     "pioneer-10": {
       "file": "pioneer-10.json",
-      "generated": "2026-11-22",
-      "start": -10165.4125,
-      "end": 18262.50625,
-      "points": 448
+      "detail": "pioneer-10.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter"
+      ],
+      "generated": "2026-11-23",
+      "start": -10165.41299,
+      "end": 18262.50517,
+      "points": 447,
+      "detailPoints": 469
     },
     "pioneer-11": {
       "file": "pioneer-11.json",
-      "generated": "2026-11-22",
-      "start": -9766.39792,
-      "end": 18262.50625,
-      "points": 559
+      "detail": "pioneer-11.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter",
+        "Saturn"
+      ],
+      "generated": "2026-11-23",
+      "start": -9766.39842,
+      "end": 18262.50517,
+      "points": 557,
+      "detailPoints": 593
     },
     "new-horizons": {
       "file": "new-horizons.json",
-      "generated": "2026-11-22",
-      "start": 2210.32847,
-      "end": 18262.49931,
-      "points": 278
+      "detail": "new-horizons.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter",
+        "Pluto"
+      ],
+      "generated": "2026-11-23",
+      "start": 2210.32772,
+      "end": 18262.49823,
+      "points": 277,
+      "detailPoints": 283
     },
     "cassini": {
       "file": "cassini.json",
-      "generated": "2026-11-22",
-      "start": -808.10486,
-      "end": 6466.9375,
-      "points": 4669
+      "detail": "cassini.detail.json",
+      "near": [
+        "Earth",
+        "Venus",
+        "Saturn"
+      ],
+      "generated": "2026-11-23",
+      "start": -808.10559,
+      "end": 6466.93669,
+      "points": 4289,
+      "detailPoints": 11617
     },
     "galileo": {
       "file": "galileo.json",
-      "generated": "2026-11-22",
-      "start": -3726.43681,
-      "end": 1359.28889,
-      "points": 1671
+      "detail": "galileo.detail.json",
+      "near": [
+        "Earth",
+        "Venus",
+        "Jupiter"
+      ],
+      "generated": "2026-11-23",
+      "start": -3726.43746,
+      "end": 1359.28814,
+      "points": 1633,
+      "detailPoints": 2345
     },
     "juno": {
       "file": "juno.json",
-      "generated": "2026-11-22",
-      "start": 4234.22292,
-      "end": 10471.56806,
-      "points": 3240
+      "detail": "juno.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter"
+      ],
+      "generated": "2026-11-23",
+      "start": 4234.22214,
+      "end": 10471.56717,
+      "points": 3075,
+      "detailPoints": 5359
     },
     "parker-solar-probe": {
       "file": "parker-solar-probe.json",
-      "generated": "2026-11-22",
-      "start": 6797.84583,
-      "end": 10957.5,
-      "points": 5171
+      "detail": "parker-solar-probe.detail.json",
+      "near": [
+        "Earth",
+        "Venus"
+      ],
+      "generated": "2026-11-23",
+      "start": 6797.84501,
+      "end": 10957.4991,
+      "points": 5169,
+      "detailPoints": 5201
     },
     "juice": {
       "file": "juice.json",
-      "generated": "2026-11-22",
-      "start": 8504.03125,
-      "end": 11523.76875,
-      "points": 1042
+      "detail": "juice.detail.json",
+      "near": [
+        "Earth",
+        "Venus",
+        "Jupiter"
+      ],
+      "generated": "2026-11-23",
+      "start": 8504.0304,
+      "end": 11523.76784,
+      "points": 1041,
+      "detailPoints": 1125
     },
     "europa-clipper": {
       "file": "europa-clipper.json",
-      "generated": "2026-11-22",
-      "start": 9053.17847,
-      "end": 12663.69792,
-      "points": 1987
+      "detail": "europa-clipper.detail.json",
+      "near": [
+        "Earth",
+        "Mars",
+        "Jupiter"
+      ],
+      "generated": "2026-11-23",
+      "start": 9053.17761,
+      "end": 12663.69698,
+      "points": 1915,
+      "detailPoints": 4219
     }
   },
-  "source": "NASA/JPL Horizons"
+  "source": "NASA/JPL Horizons",
+  "planets": "planets.json"
 }
