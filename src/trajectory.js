@@ -10,9 +10,11 @@ export const daysToMs = (d) => J2000_MS + d * DAY_MS;
 
 /**
  * Remove points that linear interpolation (in time) can reproduce within `tol` AU.
+ * `tol` is a number or an array with one tolerance per sample.
  * Keeps the first and last point. `maxGapDays` limits the time between kept points.
  */
 export function decimate(t, p, tol, maxGapDays = 60) {
+  const tolAt = typeof tol === 'number' ? () => tol : (k) => tol[k];
   const n = t.length;
   if (n <= 2) return { t: [...t], p: [...p] };
   const keep = [0];
@@ -24,7 +26,7 @@ export function decimate(t, p, tol, maxGapDays = 60) {
       const f = (t[k] - t[a]) / dt;
       for (let c = 0; c < 3; c++) {
         const v = p[a * 3 + c] + (p[b * 3 + c] - p[a * 3 + c]) * f;
-        if (Math.abs(v - p[k * 3 + c]) > tol) return false;
+        if (Math.abs(v - p[k * 3 + c]) > tolAt(k)) return false;
       }
     }
     return true;

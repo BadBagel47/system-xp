@@ -51,7 +51,7 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
 
   // ---------- Light ----------
   scene.add(new THREE.PointLight(0xffffff, 2.2, 0, 0));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.22)); // night sides stay faintly visible
 
   const stars = makeStars();
   scene.add(stars);
@@ -104,16 +104,8 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
       if (byId.has(probe.id)) continue;
       const mesh = new THREE.Mesh(probeGeo, new THREE.MeshBasicMaterial({ color: probe.color }));
       scene.add(mesh);
-      const n = traj.t.length;
-      const posAttr = new THREE.BufferAttribute(new Float32Array(n * 3), 3);
-      const distAttr = new THREE.BufferAttribute(new Float32Array(n), 1);
-      const solidGeo = new THREE.BufferGeometry();
-      solidGeo.setAttribute('position', posAttr);
-      const plannedGeo = new THREE.BufferGeometry();
-      plannedGeo.setAttribute('position', posAttr);
-      plannedGeo.setAttribute('lineDistance', distAttr);
       const solid = new THREE.Line(
-        solidGeo,
+        new THREE.BufferGeometry(),
         new THREE.LineBasicMaterial({ color: probe.color, transparent: true, opacity: 0.75 }),
       );
       const dashMat = new THREE.LineDashedMaterial({
@@ -124,7 +116,7 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
         gapSize: 0.08,
       });
       dashMaterials.push(dashMat);
-      const planned = new THREE.Line(plannedGeo, dashMat);
+      const planned = new THREE.Line(new THREE.BufferGeometry(), dashMat);
       const headGeo = new THREE.BufferGeometry();
       headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
       headGeo.setAttribute('lineDistance', new THREE.BufferAttribute(new Float32Array(2), 1));
@@ -143,16 +135,46 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
         priority: 20,
         minPx: PROBE_MIN_PX,
       });
-      Object.assign(entry, {
-        traj,
-        generatedDays: msToDays(Date.parse(traj.generated)),
-        lines: { solid, planned, head, posAttr, distAttr, headGeo },
-        display: {}, // cached display coordinates per scale mode
-        state: 'before',
-      });
-      entry.genIndex = sampleIndex(traj.t, entry.generatedDays);
-      updateTrailGeometry(entry);
+      entry.lines = { solid, planned, head, headGeo };
+      entry.state = 'before';
+      setTraj(entry, traj);
     }
+    setTime(simMs, true);
+  }
+
+  /** Give a probe a (new) trajectory, e.g. the detailed version near planets. */
+  function setTraj(entry, traj) {
+    const n = traj.t.length;
+    entry.traj = traj;
+    entry.generatedDays = msToDays(Date.parse(traj.generated));
+    entry.genIndex = sampleIndex(traj.t, entry.generatedDays);
+    entry.display = {}; // cached display coordinates per scale mode
+    const posAttr = new THREE.BufferAttribute(new Float32Array(n * 3), 3);
+    const distAttr = new THREE.BufferAttribute(new Float32Array(n), 1);
+    const { solid, planned } = entry.lines;
+    solid.geometry.dispose();
+    planned.geometry.dispose();
+    solid.geometry = new THREE.BufferGeometry();
+    solid.geometry.setAttribute('position', posAttr);
+    planned.geometry = new THREE.BufferGeometry();
+    planned.geometry.setAttribute('position', posAttr);
+    planned.geometry.setAttribute('lineDistance', distAttr);
+    entry.lines.posAttr = posAttr;
+    entry.lines.distAttr = distAttr;
+    updateTrailGeometry(entry);
+  }
+
+  function upgradeProbe(id, traj) {
+    const entry = byId.get(id);
+    if (!entry || entry.kind !== 'probe') return;
+    setTraj(entry, traj);
+    setTime(simMs, true);
+  }
+
+  /** Recompute everything that depends on planet positions (after corrections load). */
+  function refreshPlanets() {
+    for (const b of bodies) if (b.traj) b.display.compressed = null;
+    for (const b of bodies) if (b.traj && mode === 'compressed') updateTrailGeometry(b);
     setTime(simMs, true);
   }
 
@@ -649,6 +671,8 @@ export function startApp({ container, time, onFrame, onFatal, onFocusChange, onS
     follow,
     select: (id) => byId.get(id) && select(byId.get(id)),
     addProbes,
+    upgradeProbe,
+    refreshPlanets,
     getInfo,
     setBottomInset,
     get focusedId() {

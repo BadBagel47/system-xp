@@ -6,6 +6,7 @@ export const DAY_MS = 86400000;
 
 // Simulated days per real second.
 export const SPEEDS = {
+  hour: 1 / 24,
   day: 1,
   month: 365.25 / 12,
   year: 365.25,

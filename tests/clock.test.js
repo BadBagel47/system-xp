@@ -23,6 +23,14 @@ describe('clock', () => {
     expect(createClock(0).t).toBe(TIME_MIN);
   });
 
+  it('has an hour-per-second speed for flybys', () => {
+    const c = createClock(Date.UTC(2000, 0, 1));
+    c.playing = true;
+    c.speed = 'hour';
+    c.tick(3);
+    expect(c.t).toBe(Date.UTC(2000, 0, 1, 3));
+  });
+
   it('does not move while paused', () => {
     const c = createClock(Date.UTC(2010, 5, 1));
     expect(c.tick(10)).toBe(Date.UTC(2010, 5, 1));
