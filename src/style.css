@@ -395,4 +395,7 @@ select:not([multiple]):not([size]) {
   .banner { top: calc(env(safe-area-inset-top) + 56px); font-size: 13px; }
   html.has-sheet .info { display: none; }
   .dock-row { justify-content: center; }
+  .dock .group { gap: 6px; }
+  .seg button { padding: 0 8px; font-size: 12px; }
+  .btn.small { padding: 6px 10px; }
 }

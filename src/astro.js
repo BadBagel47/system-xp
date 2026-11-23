@@ -3,16 +3,45 @@
 // then mapped to scene coordinates where +Y is ecliptic north.
 
 import * as Astronomy from 'astronomy-engine';
+import { positionAt, msToDays } from './trajectory.js';
 
 const EQJ_TO_ECL = Astronomy.Rotation_EQJ_ECL();
 
-/** Heliocentric ecliptic J2000 position of a body, in AU. */
-export function helioEcliptic(bodyId, date) {
+/** Heliocentric ecliptic J2000 position from Astronomy Engine alone, in AU. */
+export function helioEclipticRaw(bodyId, date) {
   const body = Astronomy.Body[bodyId];
   if (!body) throw new Error(`Unknown body: ${bodyId}`);
   const eqj = Astronomy.HelioVector(body, date);
   const ecl = Astronomy.RotateVector(EQJ_TO_ECL, eqj);
   return { x: ecl.x, y: ecl.y, z: ecl.z };
+}
+
+// Corrections (NASA/JPL Horizons minus Astronomy Engine) per planet, so the planets
+// sit exactly where the probe trajectories expect them. Loaded from data/planets.json.
+let corrections = null;
+const corrOut = [0, 0, 0];
+
+/** `bodies`: { Jupiter: { t: [days since J2000], d: [dx, dy, dz, ...] (AU) }, ... } */
+export function setPlanetCorrections(bodies) {
+  corrections = bodies || null;
+}
+
+/**
+ * Heliocentric ecliptic J2000 position of a body, in AU, including the
+ * Horizons correction when it has been loaded (and the date is inside its range).
+ */
+export function helioEcliptic(bodyId, date) {
+  const v = helioEclipticRaw(bodyId, date);
+  const c = corrections?.[bodyId];
+  if (c) {
+    const d = positionAt({ t: c.t, p: c.d }, msToDays(date.getTime()), corrOut);
+    if (d) {
+      v.x += d[0];
+      v.y += d[1];
+      v.z += d[2];
+    }
+  }
+  return v;
 }
 
 /**

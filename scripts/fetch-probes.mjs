@@ -9,18 +9,31 @@
 //   node scripts/fetch-probes.mjs --only voyager-1,juno
 //
 // Positions: heliocentric (Sun centre), ecliptic J2000 frame, AU.
+// Times: days since J2000, in UT (Horizons' TDB times are converted), so they
+// match the clock the page and Astronomy Engine use.
+//
 // Sampling is adaptive: a coarse pass finds where the path bends sharply
-// (flybys, orbits, perihelia), those windows are re-fetched hourly, and the
-// result is thinned to what straight segments can reproduce within TOL_AU.
+// (flybys, orbits, perihelia) and those windows are re-fetched hourly; close
+// to a planet the path is re-fetched every 10 minutes. Two files per probe:
+//   <id>.json         thinned to TOL_AU everywhere (loaded at start)
+//   <id>.detail.json  also thinned to a few hundred km near planets (loaded on demand)
+//
+// The script also writes planets.json: Horizons minus Astronomy Engine for each
+// planet, so the page can place the planets exactly where the probes expect them.
 
 import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as Astronomy from 'astronomy-engine';
 import { PROBES } from '../src/probe-catalog.js';
-import { decimate } from '../src/trajectory.js';
+import { PLANETS, AU_KM } from '../src/bodies.js';
+import { PLANET_ORBITS } from '../src/scale.js';
+import { helioEclipticRaw } from '../src/astro.js';
+import { decimate, positionAt, daysToMs } from '../src/trajectory.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'public', 'data', 'probes');
+const PLANETS_FILE = join(ROOT, 'public', 'data', 'planets.json');
 const API = 'https://ssd.jpl.nasa.gov/api/horizons.api';
 
 const JD_J2000 = 2451545.0;
@@ -28,6 +41,17 @@ const LIMIT_END_JD = 2470172.5; // 2051-01-01 – a little beyond the time slide
 const TOL_AU = 2e-4; // ~30,000 km
 const COARSE_STEP_H = 24;
 const FINE_STEP_H = 1;
+const NEAR_STEP_H = 1 / 6; // 10 minutes
+const START_JD = 2440587.5 - 31; // 1969-12-01
+// Horizons IDs for the planet corrections (Pluto: system barycentre, no Charon wobble).
+// Mercury is left out: no probe here visits it, and its tiny residuals need many samples.
+const PLANET_HORIZONS = { Venus: '299', Earth: '399', Mars: '499', Jupiter: '599', Saturn: '699', Uranus: '799', Neptune: '899', Pluto: '9' };
+// "Near a planet": within 40 planet radii, at least 500,000 km.
+const NEAR_AU = Object.fromEntries(PLANETS.map((p) => [p.id, Math.max(40 * p.radiusKm, 500000) / AU_KM]));
+const NEAR_TOL_AU = Object.fromEntries(PLANETS.map((p) => [p.id, Math.max(0.05 * p.radiusKm, 300) / AU_KM]));
+const AE_VERSION = JSON.parse(
+  await readFile(join(ROOT, 'node_modules', 'astronomy-engine', 'package.json'), 'utf8'),
+).version;
 const MAX_STEPS_PER_REQUEST = 20000;
 
 const args = process.argv.slice(2);
@@ -168,6 +192,93 @@ function mergeSamples(coarse, fineParts) {
 }
 
 const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
+const nowIso = () => new Date().toISOString().slice(0, 19) + 'Z';
+
+/** Horizons TDB Julian date -> UT days since J2000 (removes ΔT, about a minute). */
+function jdToUtDays(jd) {
+  const d = jd - JD_J2000;
+  const at = Astronomy.MakeTime(new Date(daysToMs(d)));
+  return d - (at.tt - at.ut);
+}
+const toUt = (s) => ({ t: s.t.map(jdToUtDays), p: s.p });
+
+// ---------- Planet corrections ----------
+let planetCorr = {};
+
+function planetAt(name, utDays) {
+  const e = helioEclipticRaw(name, new Date(daysToMs(utDays)));
+  const v = [e.x, e.y, e.z];
+  const c = planetCorr[name];
+  if (c) {
+    const d = positionAt({ t: c.t, p: c.d }, utDays);
+    if (d) for (let k = 0; k < 3; k++) v[k] += d[k];
+  }
+  return v;
+}
+
+async function fetchPlanetCorrections() {
+  const bodies = {};
+  for (const planet of PLANETS) {
+    const hid = PLANET_HORIZONS[planet.id];
+    if (!hid) continue;
+    const h = toUt(await vectors(hid, START_JD, LIMIT_END_JD + 31, 48));
+    const d = [];
+    for (let i = 0; i < h.t.length; i++) {
+      const e = helioEclipticRaw(planet.id, new Date(daysToMs(h.t[i])));
+      d.push(h.p[i * 3] - e.x, h.p[i * 3 + 1] - e.y, h.p[i * 3 + 2] - e.z);
+    }
+    const tol = Math.max(0.1 * planet.radiusKm, 500) / AU_KM;
+    const thin = decimate(h.t, d, tol, 400);
+    bodies[planet.id] = { t: thin.t.map((v) => round(v, 4)), d: thin.p.map((v) => round(v, 8)) };
+    console.log(`${planet.name} correction: ${h.t.length} samples -> ${thin.t.length} points`);
+  }
+  planetCorr = bodies;
+  await writeFile(
+    PLANETS_FILE,
+    JSON.stringify({
+      source: 'NASA/JPL Horizons (https://ssd.jpl.nasa.gov/horizons/)',
+      about: 'Horizons position minus Astronomy Engine position per planet (heliocentric ecliptic J2000, AU). t = days since J2000 (UT).',
+      astronomyEngine: AE_VERSION,
+      generatedAt: nowIso(),
+      bodies,
+    }) + '\n',
+  );
+}
+
+/** For each sample: the planet it is near (or null). */
+function nearPlanets(s) {
+  const out = new Array(s.t.length).fill(null);
+  for (let i = 0; i < s.t.length; i++) {
+    const v = [s.p[i * 3], s.p[i * 3 + 1], s.p[i * 3 + 2]];
+    const r = Math.hypot(...v);
+    for (const name in PLANET_ORBITS) {
+      const { a, e } = PLANET_ORBITS[name];
+      if (Math.abs(r - a) > NEAR_AU[name] + a * e + 0.02) continue;
+      const P = planetAt(name, s.t[i]);
+      if (Math.hypot(v[0] - P[0], v[1] - P[1], v[2] - P[2]) < NEAR_AU[name]) {
+        out[i] = name;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Time windows (UT days) around runs of samples that are near a planet. */
+function nearWindows(s, near) {
+  const wins = [];
+  for (let i = 0; i < s.t.length; i++) {
+    if (!near[i]) continue;
+    const a = s.t[Math.max(0, i - 1)];
+    const b = s.t[Math.min(s.t.length - 1, i + 1)];
+    const last = wins[wins.length - 1];
+    if (last && a <= last[1] + 1) last[1] = Math.max(last[1], b);
+    else wins.push([a, b]);
+  }
+  return wins;
+}
+
+const utToJd = (d) => d + JD_J2000; // close enough for choosing fetch windows
 
 async function fetchProbe(probe) {
   const cov = await coverage(probe.horizons);
@@ -176,31 +287,58 @@ async function fetchProbe(probe) {
   if (probe.end) end = Math.min(end, Date.parse(probe.end) / 86400000 + 2440587.5);
   end = Math.floor(end * 1440) / 1440;
 
+  // 1. Daily samples, hourly where the path bends.
   const coarse = await vectors(probe.horizons, start, end, COARSE_STEP_H);
   const tail = await vectors(probe.horizons, end - 5 / 1440, end, 1 / 60);
   const wins = bendWindows(coarse);
   const fine = [];
   for (const [a, b] of wins) fine.push(await vectors(probe.horizons, a, b, FINE_STEP_H));
-  const merged = mergeSamples(coarse, [...fine, tail]);
-  const thin = decimate(merged.t, merged.p, TOL_AU, 120);
+  const merged = toUt(mergeSamples(coarse, [...fine, tail]));
 
-  const finePoints = fine.reduce((s, f) => s + f.t.length, 0);
+  // 2. Every 10 minutes close to planets.
+  const near0 = nearPlanets(merged);
+  const nearWins = nearWindows(merged, near0);
+  const close = [];
+  for (const [a, b] of nearWins) {
+    const ja = Math.max(start, utToJd(a));
+    const jb = Math.min(end, utToJd(b));
+    if (jb - ja > 1 / 24) close.push(toUt(await vectors(probe.horizons, ja, jb, NEAR_STEP_H)));
+  }
+  const all = mergeSamples(merged, close);
+  const near = nearPlanets(all);
+  const visited = [...new Set(near.filter(Boolean))];
+
+  // 3. Thin out: everywhere to TOL_AU, and a detailed version near planets.
+  const base = decimate(all.t, all.p, TOL_AU, 120);
+  const tol = near.map((n) => (n ? NEAR_TOL_AU[n] : TOL_AU));
+  const detail = visited.length ? decimate(all.t, all.p, tol, 120) : null;
+
+  const closeSamples = close.reduce((s, f) => s + f.t.length, 0);
   console.log(
-    `${probe.name}: ${coarse.t.length} coarse + ${finePoints} fine samples in ${wins.length} windows -> ${thin.t.length} points`,
+    `${probe.name}: ${coarse.t.length} daily + ${fine.reduce((s, f) => s + f.t.length, 0)} hourly + ${closeSamples} ten-minute samples` +
+      ` -> ${base.t.length} points${detail ? `, detail ${detail.t.length} points (near ${visited.join(', ')})` : ''}`,
   );
 
-  return {
+  const meta = {
     id: probe.id,
     name: probe.name,
     horizonsId: probe.horizons,
     source: 'NASA/JPL Horizons (https://ssd.jpl.nasa.gov/horizons/)',
-    frame: 'Heliocentric ecliptic J2000, AU. t = days since J2000 (TDB).',
+    frame: 'Heliocentric ecliptic J2000, AU. t = days since J2000 (UT).',
     generated: new Date().toISOString().slice(0, 10),
     // Positions after this moment are predictions (planned trajectory).
-    generatedAt: new Date().toISOString().slice(0, 19) + 'Z',
-    toleranceAU: TOL_AU,
-    t: thin.t.map((jd) => round(jd - JD_J2000, 5)),
-    p: thin.p.map((v) => round(v, 6)),
+    generatedAt: nowIso(),
+  };
+  const pack = (s, tolAU, digits) => ({
+    ...meta,
+    toleranceAU: tolAU,
+    t: s.t.map((d) => round(d, 5)),
+    p: s.p.map((v) => round(v, digits)),
+  });
+  return {
+    base: pack(base, TOL_AU, 6),
+    detail: detail ? pack(detail, 'varies: ~300 km to a few thousand km near planets, TOL_AU elsewhere', 7) : null,
+    near: visited,
   };
 }
 
@@ -219,19 +357,31 @@ async function main() {
   const index = (await exists(indexPath)) ? JSON.parse(await readFile(indexPath, 'utf8')) : { probes: {} };
 
   let failures = 0;
+  try {
+    await fetchPlanetCorrections();
+  } catch (err) {
+    failures++;
+    console.error(`Planet corrections: FAILED – ${err.message}`);
+    if (await exists(PLANETS_FILE)) planetCorr = JSON.parse(await readFile(PLANETS_FILE, 'utf8')).bodies;
+  }
   for (const probe of PROBES) {
     const file = join(OUT_DIR, `${probe.id}.json`);
     const wanted = only ? only.includes(probe.id) : all || probe.active || !(await exists(file));
     if (!wanted) continue;
     try {
-      const data = await fetchProbe(probe);
-      await writeFile(file, JSON.stringify(data) + '\n');
+      const { base, detail, near } = await fetchProbe(probe);
+      await writeFile(file, JSON.stringify(base) + '\n');
+      const detailName = `${probe.id}.detail.json`;
+      if (detail) await writeFile(join(OUT_DIR, detailName), JSON.stringify(detail) + '\n');
       index.probes[probe.id] = {
         file: `${probe.id}.json`,
-        generated: data.generated,
-        start: data.t[0],
-        end: data.t[data.t.length - 1],
-        points: data.t.length,
+        detail: detail ? detailName : null,
+        near,
+        generated: base.generated,
+        start: base.t[0],
+        end: base.t[base.t.length - 1],
+        points: base.t.length,
+        detailPoints: detail ? detail.t.length : 0,
       };
     } catch (err) {
       failures++;
@@ -239,6 +389,7 @@ async function main() {
     }
   }
   index.source = 'NASA/JPL Horizons';
+  index.planets = 'planets.json';
   await writeFile(indexPath, JSON.stringify(index, null, 2) + '\n');
   if (failures) process.exitCode = 1;
 }

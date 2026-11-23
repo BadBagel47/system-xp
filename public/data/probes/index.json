@@ -9,10 +9,19 @@
     },
     "voyager-2": {
       "file": "voyager-2.json",
-      "generated": "2026-11-22",
-      "start": -8168.85139,
-      "end": 18627.49931,
-      "points": 464
+      "detail": "voyager-2.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter",
+        "Saturn",
+        "Uranus",
+        "Neptune"
+      ],
+      "generated": "2026-11-23",
+      "start": -8168.85195,
+      "end": 18627.49821,
+      "points": 462,
+      "detailPoints": 510
     },
     "pioneer-10": {
       "file": "pioneer-10.json",
@@ -30,10 +39,17 @@
     },
     "new-horizons": {
       "file": "new-horizons.json",
-      "generated": "2026-11-22",
-      "start": 2210.32847,
-      "end": 18262.49931,
-      "points": 278
+      "detail": "new-horizons.detail.json",
+      "near": [
+        "Earth",
+        "Jupiter",
+        "Pluto"
+      ],
+      "generated": "2026-11-23",
+      "start": 2210.32772,
+      "end": 18262.49823,
+      "points": 277,
+      "detailPoints": 283
     },
     "cassini": {
       "file": "cassini.json",
@@ -78,5 +94,6 @@
       "points": 1987
     }
   },
-  "source": "NASA/JPL Horizons"
+  "source": "NASA/JPL Horizons",
+  "planets": "planets.json"
 }
